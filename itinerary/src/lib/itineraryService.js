@@ -27,56 +27,121 @@ const fetchRealAttractions = async (destination) => {
       return KNOWN_CITIES[lowerDest].map(name => ({ name, type: 'attraction' }));
     }
 
-    // 2. Try GEO-SEARCH (Strict Locality)
+    // 2. Parallel Search Strategy (Hybrid: Geo + Keywords)
+    // We combine both because:
+    // - Geo: Finds small local spots (Strictly accurate)
+    // - Keywords: Finds famous places that might be slightly outside the radius (e.g. Tirumala is 20km from Tirupati)
+
     const coords = await getCoordinates(destination);
 
-    if (coords) {
-      // Fetch Wiki pages within 10km radius
-      const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coords.lat}|${coords.lon}&gsradius=10000&gslimit=50&format=json&origin=*`;
-      const geoRes = await fetch(geoUrl);
-      const geoData = await geoRes.json();
+    // Prepare Promises
+    const apiCalls = [];
 
-      if (geoData.query && geoData.query.geosearch) {
-        return geoData.query.geosearch.map(item => ({
-          name: item.title,
-          type: 'attraction'
-        }));
-      }
+    // A. Geo Search (Radius increased to 20km)
+    if (coords) {
+      const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coords.lat}|${coords.lon}&gsradius=20000&gslimit=50&format=json&origin=*`;
+      apiCalls.push(fetch(geoUrl).then(r => r.json()).catch(() => ({})));
     }
 
-    // 3. Fallback to Keyword Search (if Geo fails)
+    // B. Keyword Searches (Aggressive Expansion)
+    // We run many specific queries to "force" the API to give us Temples, Parks, etc.
     const queries = [
       destination,
-      `${destination} temple`,
       `${destination} tourist attractions`,
-      `places to visit in ${destination}`
+      `places to visit in ${destination}`,
+      `${destination} temple`,
+      `${destination} landmark`,
+      `${destination} park`,
+      `${destination} museum`,
+      `sightseeing in ${destination}`
     ];
 
-    // ... (rest of fallback logic if needed, or just return empty to strictly avoid bad data)
-    // For now, let's keep the fallback but make it strict
-    const promises = queries.map(q =>
-      fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*&srlimit=20`)
-        .then(res => res.json())
-        .catch(() => ({}))
-    );
+    queries.forEach(q => {
+      apiCalls.push(
+        fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*&srlimit=50`)
+          .then(r => r.json())
+          .catch(() => ({}))
+      );
+    });
 
-    const results = await Promise.all(promises);
+    // Execute All
+    const results = await Promise.all(apiCalls);
     let allItems = [];
+
+    // Process Results
     results.forEach(data => {
+      // Geo Results
+      if (data.query && data.query.geosearch) {
+        allItems = [...allItems, ...data.query.geosearch];
+      }
+      // Keyword Results
       if (data.query && data.query.search) {
         allItems = [...allItems, ...data.query.search];
       }
     });
 
+    // SMART FILTERING
+    // We have a "Strict" list and a "Loose" list.
+    // First we try to filter strictly. If we get too few results, we relax.
+
+    // TERMS THAT ARE DEFINITELY BAD (Meta-data)
+    const BAD_TERMS = [
+      "tourism in", "list of", "geography of", "economy of", "history of",
+      "politics of", "demographics", "climate", "education in", "culture of",
+      "transport in", "bibliography", "discography", "filmography"
+    ];
+
+    // TERMS THAT ARE USUALLY BAD BUT OKAY IF WE ARE DESPERATE
+    const SOFT_BAD_TERMS = [
+      "district", "mandal", "municipality", "railway station", "airport", "bus stand",
+      "road", "highway", "corporation", "division"
+    ];
+
+    const GOOD_KEYWORDS = [
+      "temple", "park", "museum", "falls", "fort", "palace", "lake", "garden", "church", "mosque",
+      "sanctuary", "beach", "dam", "hill", "viewpoint", "resort", "monument", "memorial", "zoo",
+      "wildlife", "safari", "aquarium", "statue", "tower", "bridge", "island", "cave", "shrine",
+      "pilgrimage", "trek", "forest"
+    ];
+
+    // PASS 1: Strict Filter (Remove BAD + SOFT_BAD)
+    let strictList = allItems.filter(item => {
+      const name = item.title.toLowerCase();
+      if (name === destination.toLowerCase()) return false; // Don't show the city itself
+      if (BAD_TERMS.some(t => name.includes(t))) return false;
+      if (SOFT_BAD_TERMS.some(t => name.includes(t))) return false;
+      return true;
+    });
+
+    // PASS 2: Loose Filter (If Strict yielded < 15 items, use this)
+    let finalRawList = strictList;
+    if (strictList.length < 15) {
+      console.log("Low data count, relaxing filters...");
+      finalRawList = allItems.filter(item => {
+        const name = item.title.toLowerCase();
+        if (name === destination.toLowerCase()) return false;
+        if (BAD_TERMS.some(t => name.includes(t))) return false;
+        // Allow SOFT_BAD_TERMS (Stations, Districts) if we have to
+        return true;
+      });
+    }
+
     const seen = new Set();
-    return allItems.map(item => ({ name: item.title })).filter(place => {
+    let uniqueList = finalRawList.map(item => ({ name: item.title })).filter(place => {
       const name = place.name;
       if (seen.has(name)) return false;
-      // Strict filters
-      if (name.includes("Tourism in") || name.includes("List of")) return false;
       seen.add(name);
       return true;
     });
+
+    // PRIORITIZE "GOOD" PLACES
+    uniqueList = uniqueList.sort((a, b) => {
+      const aScore = GOOD_KEYWORDS.some(k => a.name.toLowerCase().includes(k)) ? 1 : 0;
+      const bScore = GOOD_KEYWORDS.some(k => b.name.toLowerCase().includes(k)) ? 1 : 0;
+      return bScore - aScore;
+    });
+
+    return uniqueList;
 
   } catch (err) {
     console.warn("Fetch Failed:", err);
@@ -118,22 +183,22 @@ const generateMockItinerary = async (tripData) => {
 
   // 3. Last Resort Fillers (Time-Specific Actions)
   const fillers = [
-    { title: 'Morning Coffee & Breakfast', desc: 'Start the day with a fresh brew and local pastries.', category: 'morning' },
+    { title: 'Visit Local Cafe', desc: 'Relax and enjoy the local cafe culture.', category: 'morning' },
     { title: 'Sunrise Viewpoint', desc: 'Catch the early morning sun for the best vibes.', category: 'morning' },
     { title: 'Morning Yoga/Meditation', desc: 'Peaceful start to the day.', category: 'morning' },
 
     { title: 'Local Market Visit', desc: 'Explore the local shops and culture.', category: 'any' },
     { title: 'Souvenir Shopping', desc: 'Buy gifts and mementos.', category: 'any' },
-    { title: 'Street Photography', desc: 'Capture the unique vibe of the city streets.', category: 'any' },
+    { title: 'City Walking Tour', desc: 'Explore the streets and architecture.', category: 'any' },
     { title: 'Relax at Hotel', desc: 'Take a short break to recharge.', category: 'afternoon' },
 
-    { title: 'Sunset Views', desc: 'Find a nice spot to watch the sun go down.', category: 'evening' },
+    { title: 'Sunset Point', desc: 'Find a nice spot to watch the sun go down.', category: 'evening' },
     { title: 'Evening Leisure Walk', desc: 'A pleasant walk through the lively streets.', category: 'evening' },
-    { title: 'Street Food Walk', desc: 'Try the best local evening snacks.', category: 'evening' },
+    { title: 'Street Food Tasting', desc: 'Try the best local evening snacks.', category: 'evening' },
 
-    { title: 'Night Market Visit', desc: 'Experience the buzzing night life and shopping.', category: 'night' },
-    { title: 'Live Music Venue', desc: 'Enjoy some local live performances.', category: 'night' },
-    { title: 'Dinner at Local Gem', desc: 'Enjoy a hearty meal at a rated restaurant.', category: 'night' }
+    { title: 'Night Market', desc: 'Experience the buzzing night life and shopping.', category: 'night' },
+    { title: 'Live Music', desc: 'Enjoy some local live performances.', category: 'night' },
+    { title: 'Dinner at Top Rated Spot', desc: 'Enjoy a hearty meal at a local favorite.', category: 'night' }
   ];
 
   // 4. Combine & Shuffle
