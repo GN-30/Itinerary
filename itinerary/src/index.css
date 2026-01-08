@@ -87,3 +87,53 @@
 .animate-gradient-xy {
     animation: gradient-xy 3s ease infinite;
 }
+
+@keyframes fly-around {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+
+    25% {
+        transform: translate(-20px, -15px) rotate(-10deg) scale(0.95);
+    }
+
+    50% {
+        transform: translate(15px, 20px) rotate(5deg) scale(1.05);
+    }
+
+    75% {
+        transform: translate(20px, -10px) rotate(15deg) scale(0.95);
+    }
+
+    100% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+}
+
+.animate-fly {
+    animation: fly-around 4s ease-in-out infinite;
+}
+
+@keyframes run-across {
+    0% {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    90% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateX(20rem);
+        opacity: 0;
+    }
+}
+
+.animate-train-run {
+    animation: run-across 4s linear infinite;
+}

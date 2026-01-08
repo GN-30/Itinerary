@@ -49,7 +49,8 @@ const fetchDestinationImage = async (destination) => {
   }
 };
 
-const fetchRealAttractions = async (destination) => {
+const fetchRealAttractions = async (destination, interests = []) => {
+
   try {
     // 1. Check VIP List first (Instant & Perfect data)
     // 1. Check VIP List first
@@ -254,20 +255,50 @@ const fetchRealAttractions = async (destination) => {
       // console.log("Valid Places (Distance OK) were:", validPlaces.map(p => p.name));
     }
 
-    // 4. SORT BY RELEVANCE & IMAGE PRESENCE
+    // 4. SORT BY RELEVANCE & IMAGE PRESENCE & INTERESTS
     uniqueList.sort((a, b) => {
-      // Priority 1: Has Image?
+      // Priority 0: Image Presence (Absolute Must)
       if (a.image && !b.image) return -1;
       if (!a.image && b.image) return 1;
 
-      // Priority 2: Nature/Landmark Boost (Falls, Dam, Forts, Museums > Generic Temples)
       const getPriorityScore = (name) => {
         name = name.toLowerCase();
-        if (name.includes('falls') || name.includes('waterfall')) return 20;
-        if (name.includes('dam') || name.includes('lake')) return 15;
-        if (name.includes('fort') || name.includes('palace') || name.includes('museum')) return 12;
-        if (name.includes('temple') || name.includes('park')) return 10; // Generic
-        return 5;
+        let score = 5; // Base score
+
+        // 1. BASE TYPE SCORING (Default Hierarchy)
+        if (name.includes('falls') || name.includes('waterfall')) score += 20;
+        else if (name.includes('dam') || name.includes('lake')) score += 15;
+        else if (name.includes('fort') || name.includes('palace') || name.includes('museum')) score += 12;
+        else if (name.includes('temple') || name.includes('park')) score += 10;
+
+        // 2. INTEREST BOOSTING (The User's Choice)
+        if (interests.includes('Nature')) {
+          if (name.includes('falls') || name.includes('waterfall') || name.includes('lake') || name.includes('dam') || name.includes('garden') || name.includes('park') || name.includes('hill') || name.includes('viewpoint')) {
+            score += 30; // Massive Boost
+          }
+        }
+        if (interests.includes('History')) {
+          if (name.includes('fort') || name.includes('palace') || name.includes('museum') || name.includes('tomb') || name.includes('ruins') || name.includes('monument')) {
+            score += 30;
+          }
+        }
+        if (interests.includes('Spiritual')) {
+          if (name.includes('temple') || name.includes('church') || name.includes('mosque') || name.includes('shrine') || name.includes('gurudwara') || name.includes('ashram')) {
+            score += 30;
+          }
+        }
+        if (interests.includes('Adventure')) {
+          if (name.includes('wildlife') || name.includes('safari') || name.includes('cave') || name.includes('trek') || name.includes('jungle') || name.includes('camp')) {
+            score += 30;
+          }
+        }
+        if (interests.includes('City Life')) {
+          if (name.includes('mall') || name.includes('market') || name.includes('square') || name.includes('center')) {
+            score += 30;
+          }
+        }
+
+        return score;
       };
 
       const aScore = getPriorityScore(a.name);
@@ -303,13 +334,13 @@ const fetchRealAttractions = async (destination) => {
 
 // --- MOCK DATA GENERATORS (Fallback) ---
 const generateMockItinerary = async (tripData) => {
-  const { destination, days, tripType, budget } = tripData;
+  const { destination, days, tripType, budget, interests } = tripData; // Extract interests
   const safeDays = parseInt(days) || 3;
 
   // FETCH REAL DATA
   let realPlaces = [];
   try {
-    realPlaces = await fetchRealAttractions(destination);
+    realPlaces = await fetchRealAttractions(destination, interests); // Pass interests
     console.log(`generateMockItinerary received ${realPlaces.length} real places.`);
   } catch (e) { console.warn("Fetch failed", e); }
 
@@ -396,7 +427,7 @@ const generateMockItinerary = async (tripData) => {
   }
 
   // Fetch Cover Image
-  let coverImage = `https://source.unsplash.com/800x600/?${destination},travel`;
+  let coverImage = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1200'; // Reliable static fallback
   try {
     const realCover = await fetchDestinationImage(destination);
     if (realCover) coverImage = realCover;
