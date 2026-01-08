@@ -53,11 +53,14 @@ const fetchRealAttractions = async (destination) => {
   try {
     // 1. Check VIP List first (Instant & Perfect data)
     // 1. Check VIP List first
+    // 1. Check VIP List first (Instant & Perfect data) - DISABLED to allow full search
     const lowerDest = destination.toLowerCase().trim();
+    /*
     if (KNOWN_CITIES[lowerDest]) {
       console.log("Using VIP Data for:", destination);
       return KNOWN_CITIES[lowerDest].map(name => ({ name, type: 'attraction' }));
     }
+    */
 
     // 2. Parallel Search Strategy (Hybrid: Geo + Keywords)
     // We combine both because:
@@ -69,9 +72,10 @@ const fetchRealAttractions = async (destination) => {
     // Prepare Promises
     const apiCalls = [];
 
-    // A. Geo Search (Radius increased to 20km)
+    // A. Geo Search (Radius increased to 50km)
     if (coords) {
-      const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coords.lat}|${coords.lon}&gsradius=20000&gslimit=50&format=json&origin=*`;
+      // 50km radius for Geosearch (approx 31 miles)
+      const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coords.lat}|${coords.lon}&gsradius=50000&gslimit=50&format=json&origin=*`;
       apiCalls.push(fetch(geoUrl).then(r => r.json()).catch(() => ({})));
     }
 
@@ -82,12 +86,16 @@ const fetchRealAttractions = async (destination) => {
       `${destination} tourist attractions`,
       `places to visit in ${destination}`,
       `${destination} temple`,
+      `${destination} waterfalls`,
+      `${destination} falls`,
+      `${destination} dam`,
       `${destination} landmark`,
       `${destination} park`,
       `${destination} museum`,
       `sightseeing in ${destination}`
     ];
 
+    // Split queries to avoid rate limits? No, modern browser handles parallel requests fine.
     queries.forEach(q => {
       apiCalls.push(
         fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*&srlimit=50`)
@@ -158,8 +166,9 @@ const fetchRealAttractions = async (destination) => {
               coords.lat, coords.lon,
               page.coordinates[0].lat, page.coordinates[0].lon
             );
-            if (dist < 50) isValid = true;
-            if (dist < 50) isValid = true;
+            // Ranchi waterfalls/dams can be 40-80km away. 
+            // 50km was too strict. 100km is safe for a "Day Trip".
+            if (dist < 100) isValid = true;
             // else console.log(`Skipping ${page.title} - Too far (${dist.toFixed(1)}km)`);
           }
           // CRITERIA 2: If we didn't find coords for the Destination, we trust the Keyword match (fallback)
@@ -181,7 +190,7 @@ const fetchRealAttractions = async (destination) => {
       }
     }
 
-    console.log(`Valid Places within 50km: ${validPlaces.length}`);
+    console.log(`Valid Places within 100km: ${validPlaces.length}`);
 
     // 3. FILTER BAD TERMS (Strict Aggressive)
     const BAD_TERMS = [
@@ -221,30 +230,29 @@ const fetchRealAttractions = async (destination) => {
       // 2. Must NOT contain obvious Bad Terms
       if (BAD_TERMS.some(t => name.includes(t))) return false;
 
-      // 3. Must NOT contain Residential/Commercial/Infra terms (Unless it's a famous structure, handled by whitelist ideally, but for now strict)
+      // 3. Must NOT contain Residential/Commercial/Infra terms
       if (RESIDENTIAL_TERMS.some(t => name.includes(t))) {
-        // Exception: "Tower" might be "Eiffel Tower", "Bridge" might be "London Bridge"
-        // We check if it ALSO has a Tourist Keyword. 
-        // e.g. "Marina Beach Road" -> Has 'Road' (Bad) and 'Beach' (Good).
-        // Strategy: If it has a Bad Term, it implies it's just the ROAD to the place, not the place.
-        // Wiki titles like "X Road" are usually the road. "X Temple" is the temple.
-        // So we reject.
+        // console.log(`Rejecting (Residential): ${name}`);
         return false;
       }
 
-      // 4. MUST have a Tourist Keyword (Strict White-listing)
-      // This ensures we only get "Temples", "Forts", "Parks", etc.
-      // We allow exact matches or inclusion.
+      // 4. MUST have a Tourist Keyword
       const hasTouristKeyword = TOURIST_KEYWORDS.some(k => name.includes(k));
 
-      // If no tourist keyword, we check if it has an Image. 
-      // If it has a photo + within 50km + No bad terms => It's likely a significant landmark (e.g. "India Gate", "Charminar" - wait "Gate" is in Residential? ill remove Gate/Tower/Bridge issues)
       if (!hasTouristKeyword && !place.image) {
-        return false; // No keyword AND no image? Garbage.
+        console.log(`Rejecting (No Keyword+No Image): ${name}`);
+        return false;
       }
 
       return true;
     });
+
+    // --- DEBUG: RANCHI SPECIFIC ---
+    // If we have very few results, let's see why.
+    if (uniqueList.length < 5) {
+      console.warn("Low results! Checking filtered candidates...");
+      // console.log("Valid Places (Distance OK) were:", validPlaces.map(p => p.name));
+    }
 
     // 4. SORT BY RELEVANCE & IMAGE PRESENCE
     uniqueList.sort((a, b) => {
@@ -252,9 +260,19 @@ const fetchRealAttractions = async (destination) => {
       if (a.image && !b.image) return -1;
       if (!a.image && b.image) return 1;
 
-      // Priority 2: Keyword Match Score
-      const aScore = TOURIST_KEYWORDS.some(k => a.name.toLowerCase().includes(k)) ? 10 : 0;
-      const bScore = TOURIST_KEYWORDS.some(k => b.name.toLowerCase().includes(k)) ? 10 : 0;
+      // Priority 2: Nature/Landmark Boost (Falls, Dam, Forts, Museums > Generic Temples)
+      const getPriorityScore = (name) => {
+        name = name.toLowerCase();
+        if (name.includes('falls') || name.includes('waterfall')) return 20;
+        if (name.includes('dam') || name.includes('lake')) return 15;
+        if (name.includes('fort') || name.includes('palace') || name.includes('museum')) return 12;
+        if (name.includes('temple') || name.includes('park')) return 10; // Generic
+        return 5;
+      };
+
+      const aScore = getPriorityScore(a.name);
+      const bScore = getPriorityScore(b.name);
+
       return bScore - aScore;
     });
 
