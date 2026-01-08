@@ -1,10 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+
 const MODELS_TO_TRY = [
   "gemini-1.5-flash",
-  "gemini-1.5-flash-001",
-  "gemini-1.5-pro",
-  "gemini-1.5-pro-001",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-pro-latest",
   "gemini-pro"
 ];
 
@@ -15,6 +15,38 @@ const KNOWN_CITIES = {
   "london": ["British Museum", "Tower of London", "London Eye", "Buckingham Palace", "Hyde Park"],
   "paris": ["Eiffel Tower", "Louvre Museum", "Notre-Dame Cathedral", "Arc de Triomphe", "Sacre-Coeur"],
   "new york": ["Statue of Liberty", "Central Park", "Times Square", "Empire State Building", "Brooklyn Bridge"]
+};
+
+
+const getCoordinates = async (destination) => {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&titles=${encodeURIComponent(destination)}&format=json&origin=*`;
+    const response = await fetch(url);
+    const data = await response.json();
+    const pages = data.query.pages;
+    const pageId = Object.keys(pages)[0];
+    if (pages[pageId].coordinates) {
+      return pages[pageId].coordinates[0];
+    }
+    return null;
+  } catch (error) {
+    console.warn("Failed to get coordinates:", error);
+    return null;
+  }
+};
+
+const fetchDestinationImage = async (destination) => {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(destination)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
+    const response = await fetch(url);
+    const data = await response.json();
+    const pages = data.query.pages;
+    const pageId = Object.keys(pages)[0];
+    return pages[pageId]?.thumbnail?.source || null;
+  } catch (error) {
+    console.warn("Failed to get cover image:", error);
+    return null;
+  }
 };
 
 const fetchRealAttractions = async (destination) => {
@@ -69,79 +101,181 @@ const fetchRealAttractions = async (destination) => {
     let allItems = [];
 
     // Process Results
+
+    // --- DISTANCE VALIDATION HELPER ---
+    const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371; // Radius of the earth in km
+      const dLat = (lat2 - lat1) * (Math.PI / 180);
+      const dLon = (lon2 - lon1) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c; // Distance in km
+    };
+
+    // 1. DEDUPLICATE & CLEAN
+    const seen = new Set();
+    const candidates = [];
+
+    // Merge all raw results
     results.forEach(data => {
-      // Geo Results
-      if (data.query && data.query.geosearch) {
-        allItems = [...allItems, ...data.query.geosearch];
-      }
-      // Keyword Results
-      if (data.query && data.query.search) {
-        allItems = [...allItems, ...data.query.search];
-      }
+      const list = data.query?.geosearch || data.query?.search || [];
+      list.forEach(item => {
+        if (!seen.has(item.title)) {
+          seen.add(item.title);
+          candidates.push(item);
+        }
+      });
     });
 
-    // SMART FILTERING
-    // We have a "Strict" list and a "Loose" list.
-    // First we try to filter strictly. If we get too few results, we relax.
+    console.log(`Total Candidates before Validation: ${candidates.length}`);
 
-    // TERMS THAT ARE DEFINITELY BAD (Meta-data)
+    // 2. FETCH COORDINATES FOR VALIDATION
+    // We must check if these "Keyword Found" places are actually NEAR the destination.
+    // Batch fetch coordinates (Wiki allows 50 titles per call)
+
+    const validPlaces = [];
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
+      const chunk = candidates.slice(i, i + CHUNK_SIZE);
+      const titles = chunk.map(c => c.title).join('|');
+
+      try {
+        const coordUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=coordinates|pageimages&titles=${encodeURIComponent(titles)}&format=json&pithumbsize=500&origin=*`;
+        const resp = await fetch(coordUrl);
+        const data = await resp.json();
+        const pages = data.query?.pages || {};
+
+        Object.values(pages).forEach(page => {
+          let isValid = false;
+
+          // CRITERIA 1: It has coordinates and is within 50km
+          if (coords && page.coordinates) {
+            const dist = getDistanceFromLatLonInKm(
+              coords.lat, coords.lon,
+              page.coordinates[0].lat, page.coordinates[0].lon
+            );
+            if (dist < 50) isValid = true;
+            if (dist < 50) isValid = true;
+            // else console.log(`Skipping ${page.title} - Too far (${dist.toFixed(1)}km)`);
+          }
+          // CRITERIA 2: If we didn't find coords for the Destination, we trust the Keyword match (fallback)
+          // OR if the page itself has no coords, we might skip it or keep it risky. 
+          // Ideally, real attractions DO have coords.
+          else if (!coords) {
+            isValid = true; // Cannot validate distance, trust search
+          }
+
+          if (isValid) {
+            validPlaces.push({
+              name: page.title,
+              image: page.thumbnail?.source || null
+            });
+          }
+        });
+      } catch (e) {
+        console.warn("Validation Batch Failed", e);
+      }
+    }
+
+    console.log(`Valid Places within 50km: ${validPlaces.length}`);
+
+    // 3. FILTER BAD TERMS (Strict Aggressive)
     const BAD_TERMS = [
       "tourism in", "list of", "geography of", "economy of", "history of",
       "politics of", "demographics", "climate", "education in", "culture of",
-      "transport in", "bibliography", "discography", "filmography"
+      "transport in", "bibliography", "discography", "filmography",
+      "school", "college", "university", "hospital", "clinic", "police station",
+      "post office", "bank", "atm", "government", "office", "headquarters",
+      "bus stop", "railway", "airport", "metro", "station", "stop", "terminal"
     ];
 
-    // TERMS THAT ARE USUALLY BAD BUT OKAY IF WE ARE DESPERATE
-    const SOFT_BAD_TERMS = [
-      "district", "mandal", "municipality", "railway station", "airport", "bus stand",
-      "road", "highway", "corporation", "division"
+    const RESIDENTIAL_TERMS = [
+      "nagar", "colony", "street", "road", "block", "sector", "phase", "enclave", "apartment", "residency",
+      "tower", "building", "complex", "plaza", "mall", "market", "store", "shop", "cinema", "multiplex",
+      "hospital", "clinic", "school", "college", "university", "campus", "hostel", "mess", "canteen",
+      "bus stand", "bus stop", "railway station", "airport", "metro station", "district", "mandal", "taluk",
+      "layout", "extension", "junction", "circle", "square", "gate", "bridge", "flyover", "highway", "toll"
     ];
 
-    const GOOD_KEYWORDS = [
-      "temple", "park", "museum", "falls", "fort", "palace", "lake", "garden", "church", "mosque",
+    const TOURIST_KEYWORDS = [
+      "temple", "park", "museum", "falls", "fort", "palace", "lake", "garden", "church", "mosque", "gurudwara",
       "sanctuary", "beach", "dam", "hill", "viewpoint", "resort", "monument", "memorial", "zoo",
-      "wildlife", "safari", "aquarium", "statue", "tower", "bridge", "island", "cave", "shrine",
-      "pilgrimage", "trek", "forest"
+      "wildlife", "safari", "aquarium", "statue", "tower", "island", "cave", "shrine", "ashram",
+      "pilgrimage", "trek", "forest", "jungle", "river", "mountain", "peak", "valley", "glacier",
+      "heritage", "ruins", "tomb", "mausoleum", "minaret", "observatory", "planetarium", "gallery",
+      "theatre", "stadium", "arena", "convention", "expo", "fair", "festival", "carnival", "parade",
+      "casino", "club", "bar", "pub", "brewery", "winery", "vineyard", "distillery", "factory",
+      "studio", "workshop", "center", "centre"
     ];
 
-    // PASS 1: Strict Filter (Remove BAD + SOFT_BAD)
-    let strictList = allItems.filter(item => {
-      const name = item.title.toLowerCase();
-      if (name === destination.toLowerCase()) return false; // Don't show the city itself
+    let uniqueList = validPlaces.filter(place => {
+      const name = place.name.toLowerCase();
+
+      // 1. Must NOT be the destination name itself
+      if (name === destination.toLowerCase()) return false;
+
+      // 2. Must NOT contain obvious Bad Terms
       if (BAD_TERMS.some(t => name.includes(t))) return false;
-      if (SOFT_BAD_TERMS.some(t => name.includes(t))) return false;
+
+      // 3. Must NOT contain Residential/Commercial/Infra terms (Unless it's a famous structure, handled by whitelist ideally, but for now strict)
+      if (RESIDENTIAL_TERMS.some(t => name.includes(t))) {
+        // Exception: "Tower" might be "Eiffel Tower", "Bridge" might be "London Bridge"
+        // We check if it ALSO has a Tourist Keyword. 
+        // e.g. "Marina Beach Road" -> Has 'Road' (Bad) and 'Beach' (Good).
+        // Strategy: If it has a Bad Term, it implies it's just the ROAD to the place, not the place.
+        // Wiki titles like "X Road" are usually the road. "X Temple" is the temple.
+        // So we reject.
+        return false;
+      }
+
+      // 4. MUST have a Tourist Keyword (Strict White-listing)
+      // This ensures we only get "Temples", "Forts", "Parks", etc.
+      // We allow exact matches or inclusion.
+      const hasTouristKeyword = TOURIST_KEYWORDS.some(k => name.includes(k));
+
+      // If no tourist keyword, we check if it has an Image. 
+      // If it has a photo + within 50km + No bad terms => It's likely a significant landmark (e.g. "India Gate", "Charminar" - wait "Gate" is in Residential? ill remove Gate/Tower/Bridge issues)
+      if (!hasTouristKeyword && !place.image) {
+        return false; // No keyword AND no image? Garbage.
+      }
+
       return true;
     });
 
-    // PASS 2: Loose Filter (If Strict yielded < 15 items, use this)
-    let finalRawList = strictList;
-    if (strictList.length < 15) {
-      console.log("Low data count, relaxing filters...");
-      finalRawList = allItems.filter(item => {
-        const name = item.title.toLowerCase();
-        if (name === destination.toLowerCase()) return false;
-        if (BAD_TERMS.some(t => name.includes(t))) return false;
-        // Allow SOFT_BAD_TERMS (Stations, Districts) if we have to
-        return true;
-      });
-    }
+    // 4. SORT BY RELEVANCE & IMAGE PRESENCE
+    uniqueList.sort((a, b) => {
+      // Priority 1: Has Image?
+      if (a.image && !b.image) return -1;
+      if (!a.image && b.image) return 1;
 
-    const seen = new Set();
-    let uniqueList = finalRawList.map(item => ({ name: item.title })).filter(place => {
-      const name = place.name;
-      if (seen.has(name)) return false;
-      seen.add(name);
-      return true;
-    });
-
-    // PRIORITIZE "GOOD" PLACES
-    uniqueList = uniqueList.sort((a, b) => {
-      const aScore = GOOD_KEYWORDS.some(k => a.name.toLowerCase().includes(k)) ? 1 : 0;
-      const bScore = GOOD_KEYWORDS.some(k => b.name.toLowerCase().includes(k)) ? 1 : 0;
+      // Priority 2: Keyword Match Score
+      const aScore = TOURIST_KEYWORDS.some(k => a.name.toLowerCase().includes(k)) ? 10 : 0;
+      const bScore = TOURIST_KEYWORDS.some(k => b.name.toLowerCase().includes(k)) ? 10 : 0;
       return bScore - aScore;
     });
 
-    return uniqueList;
+    // 5. FINAL LIST LOGIC (Fail-safe)
+    console.log(`Strict Tourist Filter Result: ${uniqueList.length}`);
+
+    // If strict filter killed too many good places (e.g. valid places had 14, now we have 0 or 1), 
+    // we should settle for the "Valid Distance" list instead of showing nothing.
+    if (uniqueList.length < 5 && validPlaces.length > 0) {
+      console.log("Strict filter too aggressive. Reverting to distance-validated list.");
+      uniqueList = validPlaces.filter(p => p.name.toLowerCase() !== destination.toLowerCase());
+
+      // Still sort it
+      uniqueList.sort((a, b) => {
+        if (a.image && !b.image) return -1;
+        return 0;
+      });
+    }
+
+    console.log("Final Returned Places:", uniqueList.length);
+    return uniqueList.slice(0, 15);
 
   } catch (err) {
     console.warn("Fetch Failed:", err);
@@ -155,124 +289,110 @@ const generateMockItinerary = async (tripData) => {
   const safeDays = parseInt(days) || 3;
 
   // FETCH REAL DATA
-  const realPlaces = await fetchRealAttractions(destination);
+  let realPlaces = [];
+  try {
+    realPlaces = await fetchRealAttractions(destination);
+    console.log(`generateMockItinerary received ${realPlaces.length} real places.`);
+  } catch (e) { console.warn("Fetch failed", e); }
 
-  // Dynamic Activity Templates (Mixture of Real & Generic)
-  let activityPool = [];
+  // Retry if empty
+  if (realPlaces.length === 0) {
+    console.log("Retrying fetch...");
+    realPlaces = await fetchRealAttractions(destination);
+  }
 
-  // 1. Add Real Places
-  realPlaces.forEach(place => {
-    // Determine description based on name keywords
-    let desc = `Explore this famous local landmark in ${destination}.`;
-    const n = place.name.toLowerCase();
+  // 3. Fallback Fillers (generic)
+  // 3. DISTRIBUTE REAL PLACES
+  // We want to use ALL real places found (up to a reasonable limit per day).
+  // If we have 15 places and 3 days -> 5 per day.
+  // If we have 3 places and 3 days -> 1 per day.
 
-    if (n.includes('temple') || n.includes('church') || n.includes('mosque') || n.includes('cathedral') || n.includes('kovil')) {
-      desc = `Experience the spiritual heritage at this famous site.`;
-    } else if (n.includes('museum')) {
-      desc = `Discover the rich history and collections here.`;
-    } else if (n.includes('park') || n.includes('garden')) {
-      desc = `Enjoy a relaxing time in nature.`;
-    } else if (n.includes('market') || n.includes('bazaar')) {
-      desc = `Shop for local goods and taste street food.`;
-    } else if (n.includes('mahal') || n.includes('palace') || n.includes('fort')) {
-      desc = `Admire the stunning architecture and royal history.`;
-    }
-
-    activityPool.push({ title: `Visit ${place.name}`, desc: desc });
-  });
-
-  // 3. Last Resort Fillers (Time-Specific Actions)
-  const fillers = [
-    { title: 'Visit Local Cafe', desc: 'Relax and enjoy the local cafe culture.', category: 'morning' },
-    { title: 'Sunrise Viewpoint', desc: 'Catch the early morning sun for the best vibes.', category: 'morning' },
-    { title: 'Morning Yoga/Meditation', desc: 'Peaceful start to the day.', category: 'morning' },
-
-    { title: 'Local Market Visit', desc: 'Explore the local shops and culture.', category: 'any' },
-    { title: 'Souvenir Shopping', desc: 'Buy gifts and mementos.', category: 'any' },
-    { title: 'City Walking Tour', desc: 'Explore the streets and architecture.', category: 'any' },
-    { title: 'Relax at Hotel', desc: 'Take a short break to recharge.', category: 'afternoon' },
-
-    { title: 'Sunset Point', desc: 'Find a nice spot to watch the sun go down.', category: 'evening' },
-    { title: 'Evening Leisure Walk', desc: 'A pleasant walk through the lively streets.', category: 'evening' },
-    { title: 'Street Food Tasting', desc: 'Try the best local evening snacks.', category: 'evening' },
-
-    { title: 'Night Market', desc: 'Experience the buzzing night life and shopping.', category: 'night' },
-    { title: 'Live Music', desc: 'Enjoy some local live performances.', category: 'night' },
-    { title: 'Dinner at Top Rated Spot', desc: 'Enjoy a hearty meal at a local favorite.', category: 'night' }
-  ];
-
-  // 4. Combine & Shuffle
-  // Mark real places as 'any' time so they can fit anywhere, but we can try to smart slot them.
-  let fullPool = activityPool.map(a => ({ ...a, category: 'any' }));
-  fullPool = [...fullPool, ...fillers]; // Add fillers to the pool
-
-  // Shuffle logic
-  fullPool = fullPool.sort(() => 0.5 - Math.random());
+  const totalPlaces = realPlaces.length;
+  // If no places found, fallback to a single generic placeholder per day (Rare)
+  if (totalPlaces === 0) {
+    realPlaces.push({ name: `Explore ${destination} City Center`, image: null });
+  }
 
   const generatedDays = [];
-  const timeSlots = ['09:00 AM', '11:00 AM', '02:00 PM', '05:00 PM', '08:00 PM'];
-  const slotCategories = ['morning', 'morning', 'afternoon', 'evening', 'night'];
+  let placeIndex = 0;
 
-  const usedTitles = new Set(); // TRACK USED PLACES
+  // Calculate items per day (at least 2, at most 3 to fit M/A/E)
+  let itemsPerDay = Math.ceil(totalPlaces / safeDays);
+  if (itemsPerDay < 2) itemsPerDay = 2;
+  if (itemsPerDay > 3) itemsPerDay = 3; // Cap at 3 for Morning/Afternoon/Evening
+
+  const timeLabels = ['Morning', 'Afternoon', 'Evening'];
 
   for (let i = 1; i <= safeDays; i++) {
     const dailyPlan = [];
 
-    // LOGIC: Long Trip Pacing
-    const isRelaxDay = safeDays >= 10 && i > 1 && i % 5 === 0;
-    const isArrivalDay = i === 1;
+    // Fill this day
+    for (let j = 0; j < itemsPerDay; j++) {
+      let activity = null;
+      let timeLabel = timeLabels[j] || 'Anytime';
 
-    let slotsIndexes = [0, 1, 2, 3, 4]; // Default 5 slots
-    if (isRelaxDay) slotsIndexes = [1, 3]; // Late start, relaxed evening
-    if (isArrivalDay) slotsIndexes = [2, 3, 4]; // Start from afternoon
+      // Use Real Place
+      if (placeIndex < realPlaces.length) {
+        const place = realPlaces[placeIndex];
+        placeIndex++;
 
-    let dayTheme = 'Exploration & Culture';
-    if (isRelaxDay) dayTheme = 'Relaxation & Recharge';
-    if (isArrivalDay) dayTheme = 'Arrival & Discovery';
-    if (i === safeDays) dayTheme = 'Farewell & Souvenirs';
+        let desc = `Visit this popular attraction.`;
+        const lowerName = place.name.toLowerCase();
 
-    // Attempt to fill slots
-    for (const slotIdx of slotsIndexes) {
-      const currentTime = timeSlots[slotIdx];
-      const currentCategory = slotCategories[slotIdx];
+        // Simple dynamic description
+        if (lowerName.includes('temple')) desc = "Spiritual visit to this famous temple.";
+        else if (lowerName.includes('park') || lowerName.includes('garden')) desc = "Relax in the greenery here.";
+        else if (lowerName.includes('museum')) desc = "Explore the history and culture.";
+        else if (lowerName.includes('falls')) desc = "Enjoy the scenic waterfalls.";
+        else if (lowerName.includes('lake')) desc = "Peaceful time by the water.";
+        else if (lowerName.includes('market')) desc = "Shop and explore local vibes.";
 
-      // 1. Filter: Find a unique activity that matches the TIME category
-      let nextActivity = fullPool.find(a =>
-        !usedTitles.has(a.title) &&
-        (a.category === 'any' || a.category === currentCategory)
-      );
-
-      // 2. Fallback: If no strict match, find ANY unique 'any' or 'filler' activity
-      if (!nextActivity) {
-        nextActivity = fullPool.find(a => !usedTitles.has(a.title) && a.category === 'any');
+        activity = {
+          title: place.name,
+          desc: desc,
+          image: place.image,
+          time: timeLabel
+        };
+      }
+      // If we ran out of real places, stop adding for this day (unless day is empty)
+      else {
+        if (dailyPlan.length === 0) {
+          activity = {
+            title: `Explore Local Streets`,
+            desc: `Take a walk around the city.`,
+            image: null
+          };
+        } else {
+          break; // Stop adding filler
+        }
       }
 
-      if (nextActivity) {
-        dailyPlan.push({ ...nextActivity, time: currentTime });
-        usedTitles.add(nextActivity.title);
-      } else {
-        // 3. Absolute fallback (Rare) - Pick a filler that matches the time (even if used)
-        const filler = fillers.find(f => f.category === currentCategory) || fillers[0];
-        dailyPlan.push({ ...filler, time: currentTime, title: `${filler.title} (Revisited)` });
-      }
+      if (activity) dailyPlan.push(activity);
     }
 
     generatedDays.push({
       day: i,
-      theme: dayTheme,
+      theme: `Exploring ${destination}`,
       plan: dailyPlan
     });
   }
 
+  // Fetch Cover Image
+  let coverImage = `https://source.unsplash.com/800x600/?${destination},travel`;
+  try {
+    const realCover = await fetchDestinationImage(destination);
+    if (realCover) coverImage = realCover;
+  } catch (e) { }
+
   return {
     destination,
     duration: `${safeDays} Days`,
-    coverImage: `https://source.unsplash.com/800x600/?${destination},travel`,
+    coverImage: coverImage,
     days: generatedDays
   };
 };
 
-const generateMockHotels = (destination, budget) => {
+const generateMockHotels = (destination) => {
   // Dynamic Hotel Names based on Destination
   return {
     "Normal": {
@@ -324,6 +444,7 @@ async function generateWithFallback(apiKey, prompt) {
   throw new Error(`All models failed. Details:\n${errors.join('\n')}`);
 }
 
+
 export const generateItinerary = async (tripData, apiKey) => {
   const { destination, days, tripType, budget } = tripData;
   if (!apiKey) {
@@ -331,9 +452,32 @@ export const generateItinerary = async (tripData, apiKey) => {
     return await generateMockItinerary(tripData);
   }
 
+  // --- FETCH REAL PLACES FROM WIKIPEDIA (Native) ---
+  let realPlacesContext = "";
+  try {
+    console.log("Fetching real places from Wikipedia for AI Context...");
+    const places = await fetchRealAttractions(destination);
+    if (places && places.length > 0) {
+      realPlacesContext = "REAL KNOWN PLACES (Prioritize these): \n";
+      places.slice(0, 25).forEach(p => {
+        realPlacesContext += `- ${p.name}\n`;
+      });
+    }
+  } catch (e) {
+    console.warn("Wiki Context failed", e);
+  }
+  // --------------------------------------------
+
   const prompt = `
     Generate a detailed travel itinerary for a ${days}-day trip to ${destination} for a ${tripType} trip with a ${budget} budget.
     
+    ${realPlacesContext}
+    
+    IMPORTANT:
+    1. STRICTLY use the "REAL CONFIRMED PLACES" provided above in the itinerary. Do NOT invent new places if real ones are provided.
+    2. If the provided list is short, you may supplement it with other famous, non-hallucinated landmarks known to you, but PRIORITIZE the provided list.
+    3. Ensure the itinerary is practical, covers famous and hidden gems, and fits the budget.
+
     Return the response in this strictly valid JSON format:
     {
       "destination": "${destination}",
@@ -353,7 +497,6 @@ export const generateItinerary = async (tripData, apiKey) => {
         }
       ]
     }
-    Ensure the itinerary is practical, covers famous and hidden gems, and fits the budget.
     Do NOT include any markdown code blocks (like \`\`\`json). Just return the raw JSON object.
   `;
 
@@ -371,6 +514,7 @@ export const generateItinerary = async (tripData, apiKey) => {
     return await generateMockItinerary(tripData);
   }
 };
+
 
 export const generateHotels = async (destination, budget, apiKey) => {
   if (!apiKey) {

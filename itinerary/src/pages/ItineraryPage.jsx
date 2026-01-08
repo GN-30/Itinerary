@@ -63,99 +63,134 @@ const ItineraryPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 pb-20">
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 animate-fade-in transition-colors duration-500">
       {/* Hero Section */}
-      <div className="relative h-64 md:h-80 w-full overflow-hidden">
+      <div className="relative h-[60vh] w-full overflow-hidden animate-fade-in">
         <img 
           src={itinerary.coverImage} 
           alt={itinerary.destination} 
           className="w-full h-full object-cover"
+          onError={(e) => {
+             e.target.onerror = null;
+             e.target.src = `https://source.unsplash.com/1600x900/?${encodeURIComponent(itinerary.destination)},travel`;
+          }}
         />
-        <div className="absolute inset-0 bg-black/40 flex flex-col justify-end p-6 md:p-10">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">{itinerary.destination}</h1>
-          <div className="flex flex-wrap gap-4 text-white/90">
-             <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-1 text-sm">
-                <Calendar className="w-4 h-4" /> {itinerary.duration}
-             </span>
-             <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-1 text-sm">
-                <MapPin className="w-4 h-4" /> {tripData.tripType} Trip
-             </span>
-             <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-1 text-sm">
-                💰 {tripData.budget} Budget
-             </span>
+        {/* Modern Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent flex flex-col justify-end p-6 md:p-16">
+          <div className="max-w-4xl mx-auto w-full">
+             <span className="inline-block px-3 py-1 bg-blue-600/90 text-white text-xs font-bold rounded-full mb-4 uppercase tracking-wider backdrop-blur-sm shadow-lg">
+              Your Trip Plan
+            </span>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 tracking-tight drop-shadow-md">
+              {itinerary.destination}
+            </h1>
+            
+            <div className="flex flex-wrap gap-4 text-white/90">
+               <span className="glass-card px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium text-slate-900 bg-white/60 backdrop-blur-md border border-white/20">
+                  <Calendar className="w-4 h-4 text-blue-600" /> {itinerary.duration}
+               </span>
+               <span className="glass-card px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium text-slate-900 bg-white/60 backdrop-blur-md border border-white/20">
+                  <MapPin className="w-4 h-4 text-blue-600" /> {tripData.tripType}
+               </span>
+               <span className="glass-card px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium text-slate-900 bg-white/60 backdrop-blur-md border border-white/20">
+                  💰 {tripData.budget}
+               </span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Itinerary Timeline */}
       <div className="max-w-4xl mx-auto px-4 mt-8">
-        <h2 className="text-2xl font-bold mb-6">Your Itinerary Recommendation</h2>
+        <h2 className="text-2xl font-bold mb-6 text-slate-800">Your Itinerary Recommendation</h2>
         
         <div className="space-y-4">
-          {itinerary.days.map((day) => (
-                   <div key={day.day} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+                  {itinerary.days.map((day, dayIdx) => (
+                   <div 
+                      key={day.day} 
+                      className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-8 transition-all duration-300 hover:shadow-lg animate-fade-in"
+                      style={{ animationDelay: `${dayIdx * 100}ms` }}
+                   >
                     <button 
                         onClick={() => toggleDay(day.day)}
-                        className="w-full flex items-center justify-between p-6 bg-white hover:bg-gray-50 transition"
+                        className="w-full flex items-center justify-between p-8 bg-white hover:bg-slate-50/50 transition"
                     >
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                        <div className="flex items-center gap-6">
+                            <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-2xl shadow-inner border border-transparent">
                                 {day.day}
                             </div>
                             <div className="text-left">
-                                <h3 className="text-xl font-bold text-gray-800">Day {day.day}</h3>
-                                <p className="text-sm text-gray-500 font-medium">{day.theme}</p>
+                                <h3 className="text-2xl font-bold text-slate-800">Day {day.day}</h3>
+                                <p className="text-base text-slate-500 font-medium mt-1 flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                                  {day.theme}
+                                </p>
                             </div>
                         </div>
-                        <div className={`p-2 rounded-full transition-transform duration-300 ${expandedDay === day.day ? 'rotate-180 bg-blue-50' : ''}`}>
-                            <ChevronDown className={`w-6 h-6 ${expandedDay === day.day ? 'text-blue-600' : 'text-gray-400'}`} />
+                        <div className={`p-3 rounded-full bg-slate-100 transition-transform duration-300 ${expandedDay === day.day ? 'rotate-180 bg-blue-100 text-blue-600' : 'text-slate-400'}`}>
+                            <ChevronDown className="w-6 h-6" />
                         </div>
                     </button>
 
                     {expandedDay === day.day && (
-                        <div className="p-6 pt-0 border-t border-gray-100 bg-slate-50/50">
-                            <div className="space-y-8 mt-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
+                        <div className="p-8 pt-0 bg-slate-50/30">
+                            <div className="space-y-6 mt-4 relative pl-8 border-l-2 border-dashed border-slate-200 ml-8">
                                 {day.plan.map((activity, index) => (
-                                    <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div key={index} className="relative group">
                                         
-                                        {/* Icon Dot */}
-                                        <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-blue-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                                            <Calendar className="w-4 h-4 text-white" />
-                                        </div>
+                                        {/* Connector Dot */}
+                                        <div className="absolute -left-[41px] top-6 w-5 h-5 rounded-full border-4 border-white bg-blue-500 shadow-md z-10"></div>
                                         
-                                        {/* Content Card */}
-                                        <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition">
-                                            <div className="flex flex-col gap-2">
-                                                <div className="flex justify-between items-start">
-                                                    <span className="inline-block px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-50 rounded-md">
-                                                        {activity.time}
-                                                    </span>
+                                        {/* Activity Card */}
+                                        <div className="glass-card glass-card-hover rounded-2xl p-5 md:p-6 transition-all duration-300">
+                                            <div className="flex flex-col md:flex-row gap-6">
+                                                
+                                                {/* Text Content */}
+                                                <div className="flex-1 order-2 md:order-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <span className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-100/50 rounded-full uppercase tracking-wide">
+                                                            {activity.time}
+                                                        </span>
+                                                    </div>
+
+                                                    <h4 className="text-xl font-bold text-slate-800 mb-2 leading-tight">
+                                                        {activity.title}
+                                                    </h4>
+                                                    
+                                                    <p className="text-slate-600 leading-relaxed mb-4">
+                                                        {activity.desc}
+                                                    </p>
+
                                                     <a 
                                                         href={`https://www.google.com/search?q=${activity.title} ${itinerary.destination}`} 
                                                         target="_blank" 
                                                         rel="noreferrer"
-                                                        className="text-xs text-gray-400 hover:text-blue-600 flex items-center gap-1"
+                                                        className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition"
                                                     >
-                                                        Map ↗
+                                                        View on Map ↗
                                                     </a>
                                                 </div>
-                                                
-                                                <h4 className="font-bold text-gray-800 text-lg leading-tight">
-                                                    {activity.title}
-                                                </h4>
-                                                
-                                                <p className="text-sm text-gray-600">
-                                                    {activity.desc}
-                                                </p>
 
-                                                {/* Visual Pop: Image */}
-                                                <div className="mt-3 w-full h-32 rounded-lg overflow-hidden bg-gray-100">
-                                                     <img 
-                                                        src={`https://source.unsplash.com/400x300/?${encodeURIComponent(activity.title)},travel`} 
-                                                        alt={activity.title}
-                                                        className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                                                        onError={(e) => e.target.style.display = 'none'} 
-                                                     />
+                                                {/* Image */}
+                                                <div className="w-full md:w-48 h-48 md:h-32 rounded-xl overflow-hidden shadow-sm shrink-0 order-1 md:order-2 bg-slate-100 relative group-hover:scale-[1.02] transition-transform duration-500">
+                                                     {activity.image ? (
+                                                       <img 
+                                                          src={activity.image} 
+                                                          alt={activity.title}
+                                                          className="w-full h-full object-cover transform scale-100 group-hover:scale-110 transition duration-700"
+                                                          onError={(e) => {
+                                                            e.target.onerror = null; 
+                                                            e.target.src = `https://source.unsplash.com/400x300/?${encodeURIComponent(activity.title)},travel`;
+                                                            // If that fails too, hide it
+                                                            e.target.style.display = 'block'; 
+                                                          }} 
+                                                       />
+                                                     ) : (
+                                                       // Fallback Pattern
+                                                       <div className="w-full h-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-300">
+                                                          <MapPin className="w-10 h-10 opacity-50" />
+                                                       </div>
+                                                     )}
                                                 </div>
                                             </div>
                                         </div>
