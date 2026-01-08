@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrip } from '../context/TripContext';
-import { Calendar, MapPin, Users, Wallet, Clock, Plane } from 'lucide-react';
+import { Calendar, MapPin, Users, Wallet, Clock, Plane, LogOut } from 'lucide-react';
 
 const HomePage = () => {
   const navigate = useNavigate();
-  const { setTripData, tripData, setApiKey, apiKey, user } = useTrip();
+  const { setTripData, tripData, setApiKey, apiKey, user, logout } = useTrip();
 
   // Get Initials from user name or default to 'TR' (Traveler)
   const getInitials = () => {
@@ -13,6 +13,11 @@ const HomePage = () => {
           return user.name.slice(0, 2).toUpperCase();
       }
       return 'TR';
+  };
+  
+  const handleLogout = () => {
+      logout();
+      navigate('/');
   };
   
   const [formData, setFormData] = useState({
@@ -58,10 +63,16 @@ const HomePage = () => {
             <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-purple-700">AI Travel Planner</span>
           </div>
           <div className="flex items-center gap-4">
-             {/* Removed Dummy Sign In Button as requested */}
-             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center text-white font-bold border border-white shadow-lg ring-2 ring-purple-100">
+             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center text-white font-bold border border-white shadow-lg ring-2 ring-purple-100 cursor-default">
                {getInitials()}
              </div>
+             <button 
+                onClick={handleLogout}
+                className="p-2 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                title="Logout"
+             >
+                <LogOut className="w-5 h-5" />
+             </button>
           </div>
         </div>
       </header>

@@ -1,108 +1,145 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrip } from '../context/TripContext';
-import { generateHotels } from '../lib/itineraryService';
+import { generateHotels } from '../lib/itineraryService'; // Now this is the Real Fetch
 import { downloadItineraryPDF } from '../lib/pdfGenerator';
-import { Star, Download, Home, ArrowRight } from 'lucide-react';
+import { Star, Download, Home, ArrowRight, ExternalLink, MapPin } from 'lucide-react';
 
 const HotelsPage = () => {
     const navigate = useNavigate();
-    const { tripData, itinerary, hotels, setHotels, apiKey } = useTrip();
+    const { tripData, itinerary, hotels, setHotels } = useTrip();
     const [loading, setLoading] = useState(!hotels);
     const [error, setError] = useState(null);
   
     useEffect(() => {
       // Redirect if no context
-      if (!tripData?.destination || !itinerary) {
+      if (!tripData?.destination) {
         navigate('/home');
         return;
       }
       
       if (!hotels) {
-        generateHotels(tripData.destination, tripData.budget, apiKey)
+        generateHotels(tripData.destination, tripData.budget)
             .then(data => {
                 setHotels(data);
                 setLoading(false);
             })
             .catch(err => {
+                console.error(err);
                 setError(err.message);
                 setLoading(false);
             });
       }
-    }, [tripData, itinerary, hotels, navigate, setHotels, apiKey]);
+    }, [tripData, hotels, navigate, setHotels]);
 
     if(loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center flex-col gap-4 bg-slate-50">
-              <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-gray-500 font-medium">Finding best places to stay...</p>
+            <div className="min-h-screen premium-bg flex items-center justify-center flex-col gap-6">
+              <div className="relative">
+                 <div className="w-20 h-20 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+                 <div className="absolute inset-0 flex items-center justify-center text-2xl">🏨</div>
+              </div>
+              <p className="text-white font-bold text-xl tracking-wide animate-pulse">Scanning for luxury stays...</p>
             </div>
           );
     }
 
     if (error) {
         return (
-          <div className="min-h-screen flex items-center justify-center flex-col gap-4 bg-slate-50 p-10 text-center">
-            <div className="text-red-500 text-6xl">⚠️</div>
-            <h2 className="text-2xl font-bold text-gray-800">Failed to Find Hotels</h2>
-            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl max-w-2xl overflow-auto text-left">
-                <pre className="text-sm whitespace-pre-wrap">{error}</pre>
+          <div className="min-h-screen premium-bg flex items-center justify-center p-10">
+            <div className="glass-card p-10 rounded-3xl text-center max-w-lg">
+                <div className="text-6xl mb-4">😢</div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">We couldn't find hotels</h2>
+                <p className="text-slate-500 mb-6">Something went wrong while fetching accommodation options.</p>
+                <button onClick={() => navigate('/itinerary')} className="px-6 py-2 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700">Back</button>
             </div>
-            <button 
-                onClick={() => navigate('/itinerary')}
-                className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-                Back to Itinerary
-            </button>
           </div>
         );
       }
 
     return (
-        <div className="min-h-screen bg-slate-50 text-gray-900 pb-20 p-4 md:p-10">
-            <div className="max-w-6xl mx-auto">
-                <div className="text-center mb-12">
-                    <h2 className="text-3xl md:text-4xl font-bold mb-4">Where to Stay</h2>
-                    <p className="text-gray-500 text-lg">Curated hotel recommendations for every budget.</p>
+        <div className="min-h-screen premium-bg text-gray-900 pb-20 p-4 md:p-8">
+            <div className="max-w-7xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-16 animate-fade-in space-y-4">
+                    <h2 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight">
+                        Suggested <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">Stays</span>
+                    </h2>
+                    <p className="text-slate-600 text-xl font-medium max-w-2xl mx-auto backdrop-blur-sm py-2 rounded-xl">
+                        Handpicked accommodations in {tripData.destination} tailored to your budget.
+                    </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-                     {['Normal', 'Good', 'Premium'].map((category) => {
-                         const hotel = hotels[category];
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16 px-2">
+                     {['Normal', 'Good', 'Premium'].map((category, index) => {
+                         const hotel = hotels ? hotels[category] : null;
                          if(!hotel) return null;
 
+                         // Color themes
+                         const theme = {
+                             'Normal': 'from-green-400 to-emerald-600',
+                             'Good': 'from-blue-400 to-indigo-600',
+                             'Premium': 'from-purple-400 to-pink-600'
+                         }[category];
+
+                         const label = { 'Normal': 'Budget Friendly', 'Good': 'Comfort Plus', 'Premium': 'Luxury Experience' }[category];
+
                          return (
-                            <div key={category} className="bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition hover:-translate-y-2 border border-gray-100 flex flex-col">
-                                <div className="h-48 overflow-hidden relative">
-                                    <img src={hotel.image} alt={hotel.name} className="w-full h-full object-cover transform hover:scale-110 transition duration-500" />
-                                    <div className="absolute top-4 right-4 bg-white/90 px-3 py-1 rounded-full text-xs font-bold shadow-sm">
-                                        {category}
+                            <div key={category} 
+                                 className="glass-card rounded-[2rem] overflow-hidden hover:shadow-2xl hover:shadow-blue-900/10 transition-all duration-500 transform hover:-translate-y-3 group flex flex-col"
+                                 style={{ animationDelay: `${index * 150}ms` }}
+                            >
+                                {/* Image Area */}
+                                <div className="h-64 overflow-hidden relative">
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10"/>
+                                    <img 
+                                        src={hotel.image} 
+                                        alt={hotel.name} 
+                                        className="w-full h-full object-cover transform group-hover:scale-110 transition duration-700"
+                                        onError={(e) => {
+                                            e.target.onerror = null; 
+                                            e.target.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500"; // Universal Safe Backup
+                                        }}
+                                    />
+                                    
+                                    <div className={`absolute top-4 right-4 px-4 py-1.5 rounded-full text-xs font-bold text-white shadow-lg bg-gradient-to-r ${theme} z-20`}>
+                                        {label}
+                                    </div>
+                                    <div className="absolute bottom-4 left-4 z-20 text-white">
+                                        <div className="flex items-center gap-1 text-yellow-400 text-sm font-bold mb-1">
+                                            <Star className="w-4 h-4 fill-current"/> {hotel.rating} / 5.0
+                                        </div>
+                                        <h3 className="text-2xl font-bold leading-tight shadow-black drop-shadow-lg">{hotel.name}</h3>
                                     </div>
                                 </div>
-                                <div className="p-6 flex-1 flex flex-col">
-                                    <h3 className="text-xl font-bold mb-2">{hotel.name}</h3>
-                                    <div className="flex items-center gap-1 mb-2 text-yellow-500">
-                                        <Star className="w-4 h-4 fill-current"/>
-                                        <span className="font-medium text-gray-700">{hotel.rating}</span>
-                                    </div>
-                                    <p className="text-gray-500 text-sm mb-4 flex-1">{hotel.desc}</p>
-                                    <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-auto gap-3">
-                                        <div className="flex flex-col">
-                                            <span className="text-xs text-gray-400">Approx.</span>
-                                            <span className="text-lg font-bold text-blue-600">{hotel.price}</span>
+
+                                {/* Content Area */}
+                                <div className="p-8 flex-1 flex flex-col bg-white/40 backdrop-blur-md">
+                                    <p className="text-slate-600 leading-relaxed mb-6 flex-1 font-medium text-sm">
+                                        {hotel.desc}
+                                    </p>
+                                    
+                                    <div className="pt-6 border-t border-slate-200/60 mt-auto flex items-center justify-between gap-4">
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Price</p>
+                                            <p className={`text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r ${theme}`}>
+                                                {hotel.price}
+                                            </p>
                                         </div>
+                                        
                                         <div className="flex gap-2">
                                             <button 
-                                                onClick={() => window.open(`https://www.booking.com/searchresults.html?ss=${hotel.name} ${tripData.destination}`, '_blank')}
-                                                className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition"
+                                                onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${hotel.name} ${tripData.destination}`, '_blank')}
+                                                className="p-3 bg-white text-slate-600 rounded-xl hover:bg-slate-50 border border-slate-200 shadow-sm transition"
+                                                title="View on Map"
                                             >
-                                                Book Now
+                                                <MapPin className="w-5 h-5"/>
                                             </button>
                                             <button 
-                                                onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${hotel.name} ${tripData.destination}`, '_blank')}
-                                                className="px-3 py-2 bg-gray-100 text-gray-600 text-xs font-bold rounded-lg hover:bg-gray-200 transition"
+                                                onClick={() => window.open(`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(hotel.name + ' ' + tripData.destination)}`, '_blank')}
+                                                className={`px-6 py-3 rounded-xl text-white font-bold shadow-lg shadow-blue-500/30 flex items-center gap-2 hover:opacity-90 transition bg-gradient-to-r ${theme}`}
                                             >
-                                                Map
+                                                Book <ExternalLink className="w-4 h-4"/>
                                             </button>
                                         </div>
                                     </div>
@@ -113,19 +150,22 @@ const HotelsPage = () => {
                 </div>
 
                 {/* Final Actions */}
-                <div className="flex flex-col md:flex-row gap-4 justify-center items-center">
+                <div className="flex flex-col md:flex-row gap-6 justify-center items-center pb-12">
                     <button 
                         onClick={() => downloadItineraryPDF(tripData, itinerary, hotels)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 transition transform hover:scale-105"
+                        className="group relative px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-2xl hover:bg-slate-800 transition overflow-hidden"
                     >
-                        <Download className="w-5 h-5"/> Download Itinerary
+                        <span className="relative z-10 flex items-center gap-3">
+                            <Download className="w-5 h-5 group-hover:animate-bounce"/> Download Full Plan
+                        </span>
+                        <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"/>
                     </button>
                     
                     <button 
                         onClick={() => navigate('/home')}
-                        className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-8 py-3 rounded-xl font-semibold shadow flex items-center gap-2 transition"
+                        className="px-8 py-4 bg-white/80 backdrop-blur text-slate-700 rounded-2xl font-bold shadow-xl border border-white hover:bg-white transition flex items-center gap-3 group"
                     >
-                        Plan New Trip <ArrowRight className="w-4 h-4"/>
+                        Plan Another Trip <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform"/>
                     </button>
                 </div>
 

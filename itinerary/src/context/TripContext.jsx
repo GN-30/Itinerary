@@ -13,11 +13,22 @@ export const TripProvider = ({ children }) => {
   });
   const [itinerary, setItinerary] = useState(null);
   const [hotels, setHotels] = useState(null);
-  const [user, setUser] = useState(null); // Mock auth user
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  }); 
   const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || ''); // Load from Env or empty
 
-  const login = (name) => setUser({ name });
-  const logout = () => setUser(null);
+  const login = (name) => {
+    const userData = { name };
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
 
   return (
     <TripContext.Provider value={{
