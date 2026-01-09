@@ -4,10 +4,11 @@ import { useTrip } from '../context/TripContext';
 import { generateItinerary } from '../lib/itineraryService';
 import { MapPin, Calendar, Clock, ChevronDown, ChevronUp, Plane, Train } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import TripGuideBot from '../components/TripGuideBot';
 
 const ItineraryPage = () => {
   const navigate = useNavigate();
-  const { tripData, itinerary, setItinerary, apiKey } = useTrip();
+  const { tripData, itinerary, setItinerary, apiKey, chatApiKey } = useTrip();
   const [loading, setLoading] = useState(!itinerary);
   const [error, setError] = useState(null);
   const [expandedDay, setExpandedDay] = useState(1);
@@ -305,6 +306,9 @@ const ItineraryPage = () => {
              </button>
         </div>
       </div>
+      
+      {/* AI Tour Guide Chatbot */}
+      <TripGuideBot tripData={tripData} apiKey={chatApiKey || apiKey} />
     </div>
   );
 };

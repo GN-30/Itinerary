@@ -17,7 +17,8 @@ export const TripProvider = ({ children }) => {
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   }); 
-  const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || ''); // Load from Env or empty
+  const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || ''); 
+  const [chatApiKey, setChatApiKey] = useState(import.meta.env.VITE_GEMINI_CHAT_KEY || ''); // Separate Chat Key
 
   const login = (name) => {
     const userData = { name };
@@ -36,7 +37,8 @@ export const TripProvider = ({ children }) => {
       itinerary, setItinerary,
       hotels, setHotels,
       user, login, logout,
-      apiKey, setApiKey
+      apiKey, setApiKey,
+      chatApiKey, setChatApiKey
     }}>
       {children}
     </TripContext.Provider>

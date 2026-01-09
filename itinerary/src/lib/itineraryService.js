@@ -2,10 +2,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 
 const MODELS_TO_TRY = [
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest",
-  "gemini-1.5-pro-latest",
-  "gemini-pro"
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash-001"
 ];
 
 // --- OPEN DATA SERVICE (Wikipedia + VIP List) ---
@@ -562,6 +561,9 @@ const generateMockHotels = (destination) => {
 };
 // ----------------------------------------
 
+// Helper sleep function
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function generateWithFallback(apiKey, prompt) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -578,12 +580,43 @@ async function generateWithFallback(apiKey, prompt) {
       return text;
     } catch (error) {
       console.warn(`Failed with ${modelName}:`, error.message);
+
+      // Handle Rate Limit (429) specifically
+      if (error.message.includes('429') || error.message.includes('Quota')) {
+
+        // Extract wait time from error message
+        const waitMatch = error.message.match(/retry in (\d+(\.\d+)?)s/);
+        let waitTime = 12000; // Default 12s
+        if (waitMatch && waitMatch[1]) {
+          waitTime = Math.ceil(parseFloat(waitMatch[1]) * 1000) + 2000;
+        }
+
+        console.log(`Rate Limit hit. Waiting ${waitTime / 1000}s before retry...`);
+        // Notify user via console (they can't see this but good for debugging)
+
+        await sleep(waitTime);
+
+        // Retry same model once
+        try {
+          console.log(`Retrying ${modelName} after wait...`);
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          return response.text();
+        } catch (retryErr) {
+          console.warn(`Retry failed for ${modelName}:`, retryErr.message);
+          errors.push(`${modelName} (Retry): ${retryErr.message}`);
+        }
+      }
+
       errors.push(`${modelName}: ${error.message}`);
       continue;
     }
   }
 
-  throw new Error(`All models failed. Details:\n${errors.join('\n')}`);
+  // Graceful Failure Message (Instead of crash)
+  console.error("All models failed:", errors);
+  return "I'm currently receiving too many requests from travelers! Please wait a minute and ask me again. 🛑";
 }
 
 
@@ -726,5 +759,32 @@ export const generateHotels = async (destination, budget, apiKey) => {
     const wikiHotels = await fetchRealHotels(destination);
     if (wikiHotels && wikiHotels.length > 0) return wikiHotels;
     return generateMockHotels(destination, budget);
+  }
+};
+
+
+export const askTripGuide = async (question, tripData, apiKey) => {
+  if (!apiKey) {
+    return "I'm sorry, I'm having trouble connecting to the travel network right now. Please check your API key.";
+  }
+
+  const { destination } = tripData;
+  const prompt = `
+    You are an expert local tour guide for ${destination}. 
+    The user is currently planning a trip there.
+    
+    User Question: "${question}"
+    
+    Answer the question helpfully, briefly, and enthusiastically. 
+    Focus on local insights, hidden gems, and practical advice for ${destination}.
+    Keep the answer under 3 sentences if possible.
+  `;
+
+  try {
+    const text = await generateWithFallback(apiKey, prompt);
+    return text;
+  } catch (error) {
+    console.error("Chatbot Error Detail:", error);
+    return `Connection Issue: ${error.message} (Check Console)`;
   }
 };

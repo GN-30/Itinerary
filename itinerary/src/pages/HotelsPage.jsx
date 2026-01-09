@@ -65,7 +65,14 @@ const HotelsPage = () => {
         <div className="min-h-screen premium-bg text-gray-900 pb-20 p-4 md:p-8">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="text-center mb-16 animate-fade-in space-y-4">
+                <div className="relative mb-16 animate-fade-in space-y-4 text-center">
+                    <button 
+                        onClick={() => navigate('/itinerary')}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 p-3 md:p-4 bg-white/10 backdrop-blur-md rounded-2xl hover:bg-white/20 transition-all text-white border border-white/20 group flex z-10"
+                        title="Back to Itinerary"
+                    >
+                        <ArrowRight className="w-5 h-5 md:w-6 md:h-6 rotate-180 group-hover:-translate-x-1 transition-transform" />
+                    </button>
                     <h2 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight">
                         Suggested <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">Stays</span>
                     </h2>
