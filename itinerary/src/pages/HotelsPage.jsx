@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrip } from '../context/TripContext';
-import { generateHotels } from '../lib/itineraryService'; // Now this is the Real Fetch
+import { generateHotels } from '../lib/itineraryService'; 
 import { downloadItineraryPDF } from '../lib/pdfGenerator';
-import { Star, Download, Home, ArrowRight, ExternalLink, MapPin } from 'lucide-react';
+import { Star, Download, ArrowRight, ExternalLink, MapPin } from 'lucide-react';
 
 const HotelsPage = () => {
     const navigate = useNavigate();
-    const { tripData, itinerary, hotels, setHotels } = useTrip();
+    const { tripData, itinerary, hotels, setHotels, apiKey } = useTrip(); // Added apiKey
     const [loading, setLoading] = useState(!hotels);
     const [error, setError] = useState(null);
   
@@ -19,7 +19,8 @@ const HotelsPage = () => {
       }
       
       if (!hotels) {
-        generateHotels(tripData.destination, tripData.budget)
+        // Pass apiKey to service
+        generateHotels(tripData.destination, tripData.budget, apiKey)
             .then(data => {
                 setHotels(data);
                 setLoading(false);
@@ -30,7 +31,7 @@ const HotelsPage = () => {
                 setLoading(false);
             });
       }
-    }, [tripData, hotels, navigate, setHotels]);
+    }, [tripData, hotels, navigate, setHotels, apiKey]);
 
     if(loading) {
         return (
@@ -51,6 +52,9 @@ const HotelsPage = () => {
                 <div className="text-6xl mb-4">😢</div>
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">We couldn't find hotels</h2>
                 <p className="text-slate-500 mb-6">Something went wrong while fetching accommodation options.</p>
+                <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm mb-6 font-mono text-left overflow-auto max-h-32">
+                    {error}
+                </div>
                 <button onClick={() => navigate('/itinerary')} className="px-6 py-2 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700">Back</button>
             </div>
           </div>
@@ -66,28 +70,25 @@ const HotelsPage = () => {
                         Suggested <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">Stays</span>
                     </h2>
                     <p className="text-slate-600 text-xl font-medium max-w-2xl mx-auto backdrop-blur-sm py-2 rounded-xl">
-                        Handpicked accommodations in {tripData.destination} tailored to your budget.
+                        Handpicked accommodations in {tripData.destination}.
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16 px-2">
-                     {['Normal', 'Good', 'Premium'].map((category, index) => {
-                         const hotel = hotels ? hotels[category] : null;
-                         if(!hotel) return null;
-
-                         // Color themes
-                         const theme = {
-                             'Normal': 'from-green-400 to-emerald-600',
-                             'Good': 'from-blue-400 to-indigo-600',
-                             'Premium': 'from-purple-400 to-pink-600'
-                         }[category];
-
-                         const label = { 'Normal': 'Budget Friendly', 'Good': 'Comfort Plus', 'Premium': 'Luxury Experience' }[category];
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16 px-2">
+                     {hotels && Array.isArray(hotels) && hotels.map((hotel, index) => {
+                         // Alternate themes for visual variety
+                         const themes = [
+                            'from-blue-500 to-indigo-600',
+                            'from-purple-500 to-pink-600',
+                            'from-emerald-500 to-teal-600', 
+                            'from-orange-500 to-red-600'
+                         ];
+                         const theme = themes[index % themes.length];
 
                          return (
-                            <div key={category} 
+                            <div key={index} 
                                  className="glass-card rounded-[2rem] overflow-hidden hover:shadow-2xl hover:shadow-blue-900/10 transition-all duration-500 transform hover:-translate-y-3 group flex flex-col"
-                                 style={{ animationDelay: `${index * 150}ms` }}
+                                 style={{ animationDelay: `${index * 100}ms` }}
                             >
                                 {/* Image Area */}
                                 <div className="h-64 overflow-hidden relative">
@@ -98,12 +99,12 @@ const HotelsPage = () => {
                                         className="w-full h-full object-cover transform group-hover:scale-110 transition duration-700"
                                         onError={(e) => {
                                             e.target.onerror = null; 
-                                            e.target.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500"; // Universal Safe Backup
+                                            e.target.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500"; 
                                         }}
                                     />
                                     
                                     <div className={`absolute top-4 right-4 px-4 py-1.5 rounded-full text-xs font-bold text-white shadow-lg bg-gradient-to-r ${theme} z-20`}>
-                                        {label}
+                                        Recommended
                                     </div>
                                     <div className="absolute bottom-4 left-4 z-20 text-white">
                                         <div className="flex items-center gap-1 text-yellow-400 text-sm font-bold mb-1">
@@ -122,7 +123,7 @@ const HotelsPage = () => {
                                     <div className="pt-6 border-t border-slate-200/60 mt-auto flex items-center justify-between gap-4">
                                         <div>
                                             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Price</p>
-                                            <p className={`text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r ${theme}`}>
+                                            <p className={`text-xl font-black bg-clip-text text-transparent bg-gradient-to-r ${theme}`}>
                                                 {hotel.price}
                                             </p>
                                         </div>

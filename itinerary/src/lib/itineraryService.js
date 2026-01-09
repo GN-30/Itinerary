@@ -484,40 +484,11 @@ const fetchRealHotels = async (destination, budgetStr = 'Medium') => {
     }
 
     // 2. Fetch Images for top candidates
-    // We need at least 3 distinct hotels (Low, Mid, High)
-    // Let's try to categorize them by name keywords
+    // Pick all candidates found
+    const selectedNames = hotelCandidates;
+    const finalHotels = [];
 
-    // Helper to guess category
-    const categorize = (name) => {
-      name = name.toLowerCase();
-      if (name.includes('palace') || name.includes('grand') || name.includes('resort') || name.includes('luxury') || name.includes('5 star')) return 'Premium';
-      if (name.includes('inn') || name.includes('lodge') || name.includes('guest') || name.includes('backpacker') || name.includes('hostel')) return 'Normal';
-      return 'Good'; // Default
-    };
-
-    let categorized = { 'Normal': [], 'Good': [], 'Premium': [] };
-
-    hotelCandidates.forEach(name => {
-      const cat = categorize(name);
-      categorized[cat].push(name);
-    });
-
-    // Ensure we have at least one for each, if not, fill from others
-    const all = [...hotelCandidates];
-    if (categorized['Normal'].length === 0) categorized['Normal'].push(all[0] || `${destination} Budget Inn`);
-    if (categorized['Good'].length === 0) categorized['Good'].push(all[1] || `Hotel ${destination} City`);
-    if (categorized['Premium'].length === 0) categorized['Premium'].push(all[2] || `Grand ${destination} Resort`);
-
-    // 3. Select final 3 and fetch images
-    const finalSelection = {
-      "Normal": categorized['Normal'][0],
-      "Good": categorized['Good'][0],
-      "Premium": categorized['Premium'][0]
-    };
-
-    const finalHotels = {};
-
-    for (const [key, name] of Object.entries(finalSelection)) {
+    for (const name of selectedNames) {
       let image = null;
       try {
         // Fetch image
@@ -531,24 +502,17 @@ const fetchRealHotels = async (destination, budgetStr = 'Medium') => {
 
       // Fallback Image
       if (!image) {
-        if (key === 'Normal') image = 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=500'; // Luxury/Cozy Resort feel (Safe Fallback)
-        if (key === 'Good') image = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500';
-        if (key === 'Premium') image = 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500';
+        image = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500';
       }
 
-      // Pricing Math
-      let price = '';
-      if (key === 'Normal') price = '$30 - $60';
-      if (key === 'Good') price = '$80 - $150';
-      if (key === 'Premium') price = '$250 - $500';
-
-      finalHotels[key] = {
+      finalHotels.push({
         name: name,
         rating: (4 + Math.random()).toFixed(1), // Random 4.0 - 5.0
-        price: price,
-        desc: `Stay at the ${name}. A top choice for ${key.toLowerCase()} travellers.`,
-        image: image
-      };
+        price: 'View Rates',
+        desc: `Stay at the ${name}. A top choice for travellers.`,
+        image: image,
+        source: 'Wikipedia'
+      });
     }
 
     return finalHotels;
@@ -560,30 +524,41 @@ const fetchRealHotels = async (destination, budgetStr = 'Medium') => {
 };
 
 const generateMockHotels = (destination) => {
-  // Dynamic Hotel Names based on Destination
-  return {
-    "Normal": {
+  // Dynamic Hotel Names based on Destination (Flat List)
+  return [
+    {
+      name: `${destination} City Hotel`,
+      rating: 4.5,
+      price: '$120/night',
+      desc: `Modern comfort with great views of ${destination}.`,
+      image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500',
+      source: 'Mock'
+    },
+    {
+      name: `${destination} Grand Resort`,
+      rating: 4.8,
+      price: '$250/night',
+      desc: `Experience world-class luxury in ${destination}.`,
+      image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500',
+      source: 'Mock'
+    },
+    {
       name: `${destination} Backpackers`,
       rating: 4.2,
       price: '$35/night',
-      desc: `A social and budget-friendly stay in the heart of ${destination}.`,
-      image: 'https://images.unsplash.com/photo-1555854743-e3c2f6a5fc6c?w=500'
+      desc: `A social and budget-friendly stay.`,
+      image: 'https://images.unsplash.com/photo-1555854743-e3c2f6a5fc6c?w=500',
+      source: 'Mock'
     },
-    "Good": {
-      name: `Hotel ${destination} City`,
-      rating: 4.6,
-      price: '$120/night',
-      desc: `Modern comfort with great views of ${destination}.`,
-      image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500'
-    },
-    "Premium": {
-      name: `The Grand ${destination} Resort`,
-      rating: 4.9,
-      price: '$450/night',
-      desc: `Experience world-class luxury in ${destination}.`,
-      image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500'
+    {
+      name: `The Royal ${destination}`,
+      rating: 4.7,
+      price: '$180/night',
+      desc: `Heritage style living in the center.`,
+      image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=500',
+      source: 'Mock'
     }
-  };
+  ];
 };
 // ----------------------------------------
 
@@ -683,51 +658,73 @@ export const generateItinerary = async (tripData, apiKey) => {
 };
 
 
+import { fetchAmadeusHotels } from './amadeusService';
+
 export const generateHotels = async (destination, budget, apiKey) => {
+
+  // 1. Try Amadeus First (Real-time Data)
+  const amadeusData = await fetchAmadeusHotels(destination);
+  if (amadeusData && Array.isArray(amadeusData) && amadeusData.length > 0) {
+    console.log("Using Amadeus Hotel Data", amadeusData);
+
+    const fallbackImages = [
+      "https://images.unsplash.com/photo-1555854743-e3c2f6a5fc6c?w=500",
+      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500",
+      "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500",
+      "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=500"
+    ];
+
+    // Inject images if missing
+    amadeusData.forEach((hotel, idx) => {
+      if (!hotel.image) {
+        // Round robin styles
+        hotel.image = fallbackImages[idx % fallbackImages.length];
+      }
+    });
+
+    return amadeusData;
+  }
+
+  // 2. Fallback to Gemini or Wiki if Amadeus fails
   if (!apiKey) {
+    // If no key, try Wiki first, then Mock
+    const wikiHotels = await fetchRealHotels(destination);
+    if (wikiHotels && wikiHotels.length > 0) return wikiHotels;
     return generateMockHotels(destination, budget);
   }
 
   const prompt = ` 
-    Suggest 3 hotels in or near ${destination} which is a remote or popular location.
-    Provide 1 'Normal' (Budget-friendly), 1 'Good' (Mid-range), and 1 'Premium' (Luxury) option.
-    Even if the place is remote, find the best available homestays or lodges.
+    Suggest 6 real hotels in or near ${destination}.
+    Provide a mix of Budget, Mid-range, and Luxury options.
     
-    Return the response in this strictly valid JSON format:
-    {
-      "Normal": {
-        "name": "Hotel Name",
-        "rating": 4.0,
-        "price": "$Price/night",
-        "desc": "Short description",
-        "image": "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500" 
-      },
-      "Good": {
+    Return the response in this strictly valid JSON array format:
+    [
+      {
         "name": "Hotel Name",
         "rating": 4.5,
         "price": "$Price/night",
         "desc": "Short description",
-        "image": "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=500"
+        "image": "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500" 
       },
-      "Premium": {
-         "name": "Hotel Name",
-         "rating": 4.9,
-         "price": "$Price/night",
-         "desc": "Short description",
-         "image": "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500"
-      }
-    }
-    Do NOT include any markdown code blocks. Just valid JSON.
+      ...
+    ]
+    Do NOT include any markdown code blocks. Just valid JSON Array.
   `;
 
   try {
     const text = await generateWithFallback(apiKey, prompt);
     console.log("Hotel Raw Response:", text); // Debug log
     const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanedText);
+    const parsed = JSON.parse(cleanedText);
+
+    if (Array.isArray(parsed)) return parsed;
+    throw new Error("Gemini did not return an array");
+
   } catch (error) {
-    console.error("Gemini API Failed. Switching to Mock Data.", error);
+    console.error("Gemini API Failed. Switching to Wiki/Mock.", error);
     // FALLBACK
+    const wikiHotels = await fetchRealHotels(destination);
+    if (wikiHotels && wikiHotels.length > 0) return wikiHotels;
     return generateMockHotels(destination, budget);
   }
 };
